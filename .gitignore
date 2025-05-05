@@ -1,0 +1,20 @@
+# lsp
+.cache
+compile_commands.json
+
+# objs
+vdisk
+disk.o
+fuse
+fuse~
+
+# mount
+mnt
+vdisk
+
+*.ans
+*.out
+tests/workspace
+.vscode
+*.init
+*.imp
