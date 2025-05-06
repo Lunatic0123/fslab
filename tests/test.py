@@ -20,7 +20,10 @@ parser.add_argument("-t", "--trace", type=str, help="Specify the trace number")
 parser.add_argument(
     "-V", "--verbose", action="store_true", help="Enable verbose output"
 )
-parser.add_argument("--anwser", "--ans", action="store_true", help="anwser traces")
+parser.add_argument(
+    "--anwser", "--ans", action="store_true", help="generate answers only"
+)
+parser.add_argument("--release", action="store_true", help="release")
 
 args = parser.parse_args()
 
@@ -30,9 +33,15 @@ for t in traces:
         print(f"Trace {t} is not a valid trace.")
         exit(1)
 
+build_type = "release" if args.release else "debug"
+
 
 def trace(i):
-    subprocess.run(["make", "cleand"], check=True, capture_output=not args.verbose)
+    subprocess.run(
+        ["make", "cleand"],
+        check=True,
+        capture_output=not args.verbose,
+    )
     subprocess.run(["make", "init"], check=True, capture_output=not args.verbose)
     start = timer()
     result = subprocess.run(
@@ -79,7 +88,11 @@ def trace(i):
     if args.anwser:
         return (True, output_ref, output_ref, time_ref, time_ref)
 
-    subprocess.run(["make", "mount"], check=True, capture_output=not args.verbose)
+    subprocess.run(
+        ["make", "mount", f"BUILD_TYPE={build_type}"],
+        check=True,
+        capture_output=not args.verbose,
+    )
     start = timer()
     result = subprocess.run(
         ["bash", osp.join(traces_folder, f"{i}.sh")],
@@ -96,7 +109,9 @@ def trace(i):
     output_stud = result.stdout if not args.verbose else ""
     if i.startswith("p"):
         subprocess.run(
-            ["make", "mount_noinit"], check=True, capture_output=not args.verbose
+            ["make", "mount_noinit", f"BUILD_TYPE={build_type}"],
+            check=True,
+            capture_output=not args.verbose,
         )
         start = timer()
         result2 = subprocess.run(
@@ -127,7 +142,9 @@ def trace(i):
             passed = output_ref == output_stud
     return (passed, output_ref, output_stud, time_ref, time_stud)
 
+
 def main():
+    subprocess.run(["make", "clean"], check=True, capture_output=not args.verbose)
     outputs = []
     total_passed = 0
     open_traces = 0
@@ -150,7 +167,7 @@ def main():
         else:
             output = f"Trace {i:2} passed [{time_stud:8.4f}s] [ref: {time_ref:8.4f}s] [{time_ref/time_stud*100:8.5f}%]"
             print(output)
-            
+
         if i.startswith("o"):
             open_traces += 1
         else:
@@ -163,11 +180,7 @@ def main():
         f"{total_passed}/{normal_traces} traces passed (excluding {open_traces} open traces)"
     )
     if args.trace is None:
-        gain_points = (
-            total_passed / normal_traces * POINTS
-            if normal_traces > 0
-            else 0
-        )
+        gain_points = total_passed / normal_traces * POINTS if normal_traces > 0 else 0
         print(
             f"Total points: {gain_points:.2f}/{POINTS} ({total_passed}/{normal_traces})"
         )

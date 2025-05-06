@@ -7,7 +7,7 @@ BUILD_TYPE ?= debug
 CC = gcc
 
 ifeq ($(BUILD_TYPE), release)
-CFLAGS = -Wall -std=gnu11 -O2
+CFLAGS = -Wall -std=gnu11 -O2 -DLOG_LEVEL=100
 else
 CFLAGS = -Wall -std=gnu11 -Og -g -fsanitize=address -fsanitize=undefined -fsanitize=leak
 endif
