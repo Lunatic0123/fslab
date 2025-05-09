@@ -47,9 +47,9 @@
 // 2. 如果你打算实现一个可以自定义初始化参数的文件系统，
 // 你可以用环境变量来传递参数，或者参考 `fs_opt.c` 中的实现方法
 int fs_mount(int init_flag) {
-  fs_info("fs_mount is called\tinit_flag:%d)\n", init_flag);
+    fs_info("fs_mount is called\tinit_flag:%d)\n", init_flag);
 
-  return 0;
+    return 0;
 }
 
 // 关闭文件系统前的清理工作
@@ -57,7 +57,9 @@ int fs_mount(int init_flag) {
 // 如果你有一些工作要在文件系统被完全关闭前完成，比如确保所有数据都被写入磁盘，或是释放内存，请在
 // fs_finalize 函数中完成，你可以假设 fuse_status 永远为 0，即 fuse
 // 永远会正常退出，该函数当且仅当清理工作失败时返回非零值
-int fs_finalize(int fuse_status) { return fuse_status; }
+int fs_finalize(int fuse_status) {
+    return fuse_status;
+}
 
 // 查询一个文件或目录的属性
 //
@@ -73,33 +75,36 @@ int fs_finalize(int fuse_status) { return fuse_status; }
 // README.md
 //
 // `stat` 会触发该函数，实际上 `cd` 的时候也会触发，这个函数被触发的情景特别多
-int fs_getattr(const char *path, struct stat *attr) {
-  fs_info("fs_getattr is called:%s\n", path);
+int fs_getattr(const char* path, struct stat* attr) {
+    fs_info("fs_getattr is called:%s\n", path);
 
-  // 这是一个示例实现，模拟一个空文件系统，以保证你能正常执行 `cd mnt` 命令
-  if (strcmp(path, "/") != 0) {
-    return -ENOENT;
-  }
-  struct timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
-  *attr = (struct stat){
-      .st_mode =
-          DIRMODE, // 记录条目的类型，权限等信息，本实验由于不考虑权限等高级功能，你只需要返回
-                   // DIRMODE 当条目是一个目录时；返回 REGMODE
-                   // 当条目是一个文件时
-      .st_nlink = 1,      // 固定返回 1 即可，因为我们不考虑链接
-      .st_uid = getuid(), // 固定返回当前用户的 uid
-      .st_gid = getgid(), // 固定返回当前用户的 gid
-      .st_size = 0,       // 返回占据的数据块的大小
-      .st_atim = ts,      // 最后访问时间
-      .st_mtim = ts,      // 最后修改时间（内容）
-      .st_ctim = ts,      // 最后修改时间（元数据）
-      .st_blksize = 4096, // 文件的最小分配单位大小（字节记）
-      .st_blocks = 0, // 占据的块数（以 512 字节为一块，这是历史原因的规定，和
-                      // st_blksize 中的不一样）
-  };
+    // 这是一个示例实现，模拟一个空文件系统，以保证你能正常执行 `cd mnt` 命令
+    if (strcmp(path, "/") != 0) {
+        return -ENOENT;
+    }
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    *attr = (struct stat){
+        .st_mode =
+            DIRMODE,         // 记录条目的类型，权限等信息，本实验由于不考虑权限等高级功能，你只需要返回
+                             // DIRMODE 当条目是一个目录时；返回 REGMODE
+                             // 当条目是一个文件时
+        .st_nlink = 1,       // 固定返回 1 即可，因为我们不考虑链接
+        .st_uid = getuid(),  // 固定返回当前用户的 uid
+        .st_gid = getgid(),  // 固定返回当前用户的 gid
+        .st_size = 0,        // 返回文件大小（字节记）
+        .st_atim = ts,       // 最后访问时间
+        .st_mtim = ts,       // 最后修改时间（内容）
+        .st_ctim = ts,       // 最后修改时间（元数据）
+        .st_blksize = 4096,  // 文件的最小分配单位大小（字节记）
+        .st_blocks = 0,      // 实际占据的数据块数（以 512
+                             // 字节为一块，这是历史原因的规定，和 st_blksize
+                             // 中的不一样），这个块数需要考虑文件系统实现的实际情况，
+                             // 比如间接指针分配的那个数据块也应该算在这里。
+                             // 比如 `stat fs.c` 里的 `Blocks:` 显示的就是这个值
+    };
 
-  return 0;
+    return 0;
 }
 
 // 查询一个目录下的所有条目名（文件，目录）（忽略 offset 参数）
@@ -114,15 +119,14 @@ int fs_getattr(const char *path, struct stat *attr) {
 // 3. 修改被查询目录的 atime（即被查询 inode 的 atime）
 //
 // `ls` 命令会触发这个函数
-int fs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
-               off_t offset, struct fuse_file_info *fi) {
-  fs_info("fs_readdir is called:%s\n", path);
+int fs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi) {
+    fs_info("fs_readdir is called:%s\n", path);
 
-  // 示例实现
-  filler(buffer, ".", NULL, 0);
-  filler(buffer, "..", NULL, 0);
+    // 示例实现
+    filler(buffer, ".", NULL, 0);
+    filler(buffer, "..", NULL, 0);
 
-  return 0;
+    return 0;
 }
 
 // 从 offset 位置开始读取至多 size 字节内容到 buffer 中
@@ -137,11 +141,10 @@ int fs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
 // 4. 返回实际读取的字节数
 //
 // `cat` 命令会触发这个函数
-int fs_read(const char *path, char *buffer, size_t size, off_t offset,
-            struct fuse_file_info *fi) {
-  fs_info("fs_read is called:%s\tsize:%d\toffset:%d\n", path, size, offset);
+int fs_read(const char* path, char* buffer, size_t size, off_t offset, struct fuse_file_info* fi) {
+    fs_info("fs_read is called:%s\tsize:%d\toffset:%d\n", path, size, offset);
 
-  return 0;
+    return 0;
 }
 
 // 创建一个文件（忽略 mode 和 dev 参数）
@@ -157,20 +160,20 @@ int fs_read(const char *path, char *buffer, size_t size, off_t offset,
 // 4. 更新父目录的 inode 的 mtime，ctime
 //
 // `touch` 命令会触发这个函数
-int fs_mknod(const char *path, mode_t mode, dev_t dev) {
-  fs_info("fs_mknod is called:%s\n", path);
+int fs_mknod(const char* path, mode_t mode, dev_t dev) {
+    fs_info("fs_mknod is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 创建一个目录（忽略 mode 参数）
 //
 // 和 fs_mknod 几乎一模一样，
 // 唯一的区别是其对应的 stat 记录的 `st_mode` 为 `DIRMODE`
-int fs_mkdir(const char *path, mode_t mode) {
-  fs_info("fs_mkdir is called:%s\n", path);
+int fs_mkdir(const char* path, mode_t mode) {
+    fs_info("fs_mkdir is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 删除一个文件
@@ -185,10 +188,10 @@ int fs_mkdir(const char *path, mode_t mode) {
 // 4. 更新 parent_inode 的 mtime，ctime
 //
 // `rm` 命令会触发该函数
-int fs_unlink(const char *path) {
-  fs_info("fs_unlink is callded:%s\n", path);
+int fs_unlink(const char* path) {
+    fs_info("fs_unlink is callded:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 删除一个目录
@@ -202,10 +205,10 @@ int fs_unlink(const char *path) {
 // `rmdir` 命令会触发该函数
 // 事实上，`rm -rf` 时的处理方法是系统自己调用 `ls, cd, rm, rmdir`
 // 来处理递归删除，而不是交给文件系统来处理递归
-int fs_rmdir(const char *path) {
-  fs_info("fs_rmdir is called:%s\n", path);
+int fs_rmdir(const char* path) {
+    fs_info("fs_rmdir is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 移动一个条目（文件或目录）
@@ -224,10 +227,10 @@ int fs_rmdir(const char *path) {
 // 1. 如果移动的是目录，目录下的内容要怎么处理
 //
 // `mv` 命令会触发该函数
-int fs_rename(const char *oldpath, const char *newpath) {
-  fs_info("fs_rename is called:%s\tnewpath:%s\n", oldpath, newpath);
+int fs_rename(const char* oldpath, const char* newpath) {
+    fs_info("fs_rename is called:%s\tnewpath:%s\n", oldpath, newpath);
 
-  return 0;
+    return 0;
 }
 
 // 从 offset 开始写入 size 字节的内容到文件中
@@ -246,11 +249,10 @@ int fs_rename(const char *oldpath, const char *newpath) {
 // 6. 返回实际写入的字节数
 //
 // `echo "hello world" > test.txt` 命令会触发这个函数
-int fs_write(const char *path, const char *buffer, size_t size, off_t offset,
-             struct fuse_file_info *fi) {
-  fs_info("fs_write is called:%s\tsize:%d\toffset:%d\n", path, size, offset);
+int fs_write(const char* path, const char* buffer, size_t size, off_t offset, struct fuse_file_info* fi) {
+    fs_info("fs_write is called:%s\tsize:%d\toffset:%d\n", path, size, offset);
 
-  return 0;
+    return 0;
 }
 
 // 修改一个文件的大小（即分配或释放数据块）
@@ -265,10 +267,10 @@ int fs_write(const char *path, const char *buffer, size_t size, off_t offset,
 // 1. 计算需要的数据块数
 // 2. 分配或释放数据块（以及 inode 中的记录）
 // 3. 修改 inode 的 ctime
-int fs_truncate(const char *path, off_t size) {
-  fs_info("fs_truncate is called:%s\tsize:%d\n", path, size);
+int fs_truncate(const char* path, off_t size) {
+    fs_info("fs_truncate is called:%s\tsize:%d\n", path, size);
 
-  return 0;
+    return 0;
 }
 
 // 修改条目的 atime 和 mtime
@@ -277,10 +279,10 @@ int fs_truncate(const char *path, off_t size) {
 // 1. 通过 path 找到 inode
 // 2. 根据传入的 tv 参数（分别是 atime 和 mtime）修改 inode 的 atime 和 mtime
 // 3. 更新 inode 的 ctime（因为 utimens 本身修改了元数据）
-int fs_utimens(const char *path, const struct timespec tv[2]) {
-  fs_info("fs_utimens is called:%s\n", path);
+int fs_utimens(const char* path, const struct timespec tv[2]) {
+    fs_info("fs_utimens is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 获取文件系统的状态
@@ -288,53 +290,56 @@ int fs_utimens(const char *path, const struct timespec tv[2]) {
 // 根据自己的文件系统填写即可，实现这个函数是可选的
 //
 // `df mnt` 和 `df -i mnt` 会触发这个函数
-int fs_statfs(const char *path, struct statvfs *stat) {
-  fs_info("fs_statfs is called:%s\n", path);
+int fs_statfs(const char* path, struct statvfs* stat) {
+    fs_info("fs_statfs is called:%s\n", path);
 
-  *stat = (struct statvfs){
-      .f_bsize = 0,  // 块大小（字节记）
-      .f_blocks = 0, // 总数据块数
-      .f_bfree = 0, // 空闲的数据块数量（包括 root 用户可用的）
-      .f_bavail = 0, // 空闲的数据块数量（不包括 root 用户可用的）
-      // 由于我们要求实现权限管理，上面两个值应该是相同的
-      .f_files = 0, // 文件系统可以创建的条目数量（相当于 inode 数量）
-      .f_ffree = 0, // 空闲的 inode 数量（包括 root 用户可用的）
-      .f_favail = 0, // 空闲的 inode 数量（不包括 root 用户可用的）
-      .f_namemax = 0, // 文件名的最大长度
-  };
+    *stat = (struct statvfs){
+        .f_bsize = 0,   // 块大小（字节记）
+        .f_blocks = 0,  // 总数据块数
+        .f_bfree = 0,   // 空闲的数据块数量（包括 root 用户可用的）
+        .f_bavail = 0,  // 空闲的数据块数量（不包括 root 用户可用的）
+        // 由于我们要求实现权限管理，上面两个值应该是相同的
+        .f_files = 0,    // 文件系统可以创建的条目数量（相当于 inode 数量）
+        .f_ffree = 0,    // 空闲的 inode 数量（包括 root 用户可用的）
+        .f_favail = 0,   // 空闲的 inode 数量（不包括 root 用户可用的）
+        .f_namemax = 0,  // 文件名的最大长度
+    };
 
-  return 0;
+    // 这里的块数量是以最开头 `f_bsize` 的块大小记的
+    // 如果你实现了稀疏文件，这里的块指的都是实际分配的块
+
+    return 0;
 }
 
 // 会在打开一个文件时被调用，完整的细节见 README.md
 //
 // 参考实现：
 // 不考虑 `fs->fh` 时，这个函数事实上可以什么都不干
-int fs_open(const char *path, struct fuse_file_info *fi) {
-  fs_info("fs_open is called:%s\tflag:%o\n", path, fi->flags);
+int fs_open(const char* path, struct fuse_file_info* fi) {
+    fs_info("fs_open is called:%s\tflag:%o\n", path, fi->flags);
 
-  return 0;
+    return 0;
 }
 
 // 会在一个文件被关闭时被调用，你可以在这里做相对于 `fs_open` 的一些清理工作
-int fs_release(const char *path, struct fuse_file_info *fi) {
-  fs_info("fs_release is called:%s\n", path);
+int fs_release(const char* path, struct fuse_file_info* fi) {
+    fs_info("fs_release is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 类似于 `fs_open`，本实验中可以不做任何处理
-int fs_opendir(const char *path, struct fuse_file_info *fi) {
-  fs_info("fs_opendir is called:%s\n", path);
+int fs_opendir(const char* path, struct fuse_file_info* fi) {
+    fs_info("fs_opendir is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 // 类似于 `fs_release`，本实验中可以不做任何处理
-int fs_releasedir(const char *path, struct fuse_file_info *fi) {
-  fs_info("fs_releasedir is called:%s\n", path);
+int fs_releasedir(const char* path, struct fuse_file_info* fi) {
+    fs_info("fs_releasedir is called:%s\n", path);
 
-  return 0;
+    return 0;
 }
 
 static struct fuse_operations fs_operations = {.getattr = fs_getattr,
@@ -354,28 +359,28 @@ static struct fuse_operations fs_operations = {.getattr = fs_getattr,
                                                .opendir = fs_opendir,
                                                .releasedir = fs_releasedir};
 
-int main(int argc, char *argv[]) {
-  // 理论上，你不需要也不应该修改 main 函数内的代码，只需要实现对应的函数
+int main(int argc, char* argv[]) {
+    // 理论上，你不需要也不应该修改 main 函数内的代码，只需要实现对应的函数
 
-  int init_flag = !has_noinit_flag(&argc, argv);
-  // 通过 make mount 或者 make debug 启动时，该值为 1
-  // 通过 make mount_noinit 或者 make debug_noinit 启动时，该值为 0
+    int init_flag = !has_noinit_flag(&argc, argv);
+    // 通过 make mount 或者 make debug 启动时，该值为 1
+    // 通过 make mount_noinit 或者 make debug_noinit 启动时，该值为 0
 
-  if (disk_mount(init_flag)) { // 不需要修改
-    fs_error("disk_mount failed!\n");
-    return -1;
-  }
+    if (disk_mount(init_flag)) {  // 不需要修改
+        fs_error("disk_mount failed!\n");
+        return -1;
+    }
 
-  if (fs_mount(init_flag)) { // 该函数用于初始化文件系统，实现细节见函数定义
-    fs_error("fs_mount failed!\n");
-    return -2;
-  }
+    if (fs_mount(init_flag)) {  // 该函数用于初始化文件系统，实现细节见函数定义
+        fs_error("fs_mount failed!\n");
+        return -2;
+    }
 
-  int fuse_status = fuse_main(argc, argv, &fs_operations, NULL);
-  // Ctrl+C 或者 make umount（fusermount） 时，fuse_main
-  // 会退出到这里而不是整个程序退出
+    int fuse_status = fuse_main(argc, argv, &fs_operations, NULL);
+    // Ctrl+C 或者 make umount（fusermount） 时，fuse_main
+    // 会退出到这里而不是整个程序退出
 
-  // 如果你有一些工作要在文件系统被完全关闭前完成，比如确保所有数据都被写入磁盘，请在
-  // fs_finalize 函数中完成
-  return fs_finalize(fuse_status);
+    // 如果你有一些工作要在文件系统被完全关闭前完成，比如确保所有数据都被写入磁盘，请在
+    // fs_finalize 函数中完成
+    return fs_finalize(fuse_status);
 }
