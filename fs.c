@@ -30,7 +30,60 @@
 // 一些辅助宏定义
 #define ceil_div(a, b) (((a) + (b) - 1) / (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
+#define MAX_FILENAME_LEN 24
+#define INODE_COUNT 32768
 
+#define INODE_SIZE sizeof(inode_t)
+#define INODES_PER_BLOCK (BLOCK_SIZE / INODE_SIZE)
+#define ENTRIES_PER_BLOCK (BLOCK_SIZE / sizeof(dir_entry_t))
+#define POINTERS_PER_BLOCK (BLOCK_SIZE / sizeof(int))
+
+#define DIRECT_POINTERS 12
+#define INDIRECT_POINTERS 2
+#define MAX_FILE_SIZE ((DIRECT_POINTERS + INDIRECT_POINTERS * POINTERS_PER_BLOCK) * BLOCK_SIZE)
+typedef struct inode{
+    uint32_t size;
+    uint32_t atime;
+    uint32_t mtime;
+    uint32_t ctime;
+    uint32_t mode;
+    uint32_t direct_block_pointer[DIRECT_POINTERS];
+    uint32_t indirect_block_pointer[INDIRECT_POINTERS];
+} inode_t;
+struct superblock{
+    int num_inodes;
+    int num_data_blocks;
+    int inode_table_blocks;
+    int data_bitmap_blocks;
+    int data_blocks_start;
+} sb;
+typedef struct dir_entry {
+    char name[26]; // 示例
+    uint32_t inode_num;
+} dir_entry_t;
+
+// 磁盘布局: 块号
+#define SUPERBLOCK_BLOCK 0
+#define INODE_BITMAP_BLOCK 1
+#define DATA_BITMAP_START_BLOCK 2 // 数据位图占用2块
+#define INODE_TABLE_START_BLOCK 4
+
+
+int get_inode_by_path(const char *path, int *parent_inode_num, char *filename);
+int read_inode(int inode_num, inode_t *inode);
+int write_inode(int inode_num, const inode_t *inode);
+int alloc_inode();
+uint32_t get_directory_block_addr(struct inode *dir_inode, uint32_t block_index);
+int find_entry_in_directory(struct inode *dir_inode, const char *name, uint32_t *inode_index);
+int find_inode_by_path(const char *path, uint32_t *inode_index);
+
+void free_inode(int inode_num);
+int alloc_data_block();
+void free_data_block(int block_num);
+void update_timestamp(inode_t *inode, bool access, bool modify, bool change);
+int add_dir_entry(inode_t *parent_inode, int parent_inode_num, const char *filename, int new_inode_num);
+int get_block_num(inode_t *inode, int file_block_idx, bool allocate);
+void free_all_data_blocks(inode_t *inode);
 // 初始化文件系统
 //
 // 参考实现：
@@ -49,6 +102,42 @@
 int fs_mount(int init_flag) {
     fs_info("fs_mount is called\tinit_flag:%d)\n", init_flag);
 
+    if(init_flag){
+        sb.num_inodes = INODE_COUNT;
+        sb.inode_table_blocks = ceil_div(sb.num_inodes * sizeof(inode_t), BLOCK_SIZE);
+        sb.data_bitmap_blocks = 2; // 根据设计计算得出
+        sb.data_blocks_start = INODE_TABLE_START_BLOCK + sb.inode_table_blocks;
+        sb.num_data_blocks = BLOCK_NUM - sb.data_blocks_start;
+
+        char block[BLOCK_SIZE];
+        memset(block, 0, BLOCK_SIZE);
+        memcpy(block, &sb, sizeof(sb));
+        disk_write(SUPERBLOCK_BLOCK, block);
+
+        // 初始化所有位图和Inode表
+        memset(block, 0, BLOCK_SIZE);
+        for (int i = INODE_BITMAP_BLOCK; i < sb.data_blocks_start; ++i) {
+            disk_write(i, block);
+        }
+
+        // 初始化根目录
+        int root_inode_num = alloc_inode();
+        if (root_inode_num != 0) {
+            fs_error("Root inode is not 0\n");
+            return -1;
+        }
+
+        inode_t root_inode;
+        memset(&root_inode, 0, sizeof(inode_t));
+        root_inode.mode = DIRMODE;
+        root_inode.size = 0; // Empty dir initially
+        update_timestamp(&root_inode, true, true, true);
+        write_inode(root_inode_num, &root_inode);
+    }
+    else{
+        // 加载超级块
+        disk_read(SUPERBLOCK_BLOCK, &sb);  
+    }
     return 0;
 }
 
@@ -77,27 +166,31 @@ int fs_finalize(int fuse_status) {
 // `stat` 会触发该函数，实际上 `cd` 的时候也会触发，这个函数被触发的情景特别多
 int fs_getattr(const char* path, struct stat* attr) {
     fs_info("fs_getattr is called:%s\n", path);
+    uint32_t inode_index;
+    inode_t target;
+      // 根据路径查找inode
+    if (find_inode_by_path(path, &inode_index) != 0) {
+        return -ENOENT; // 文件不存在
+    }
 
-    // 这是一个示例实现，模拟一个空文件系统，以保证你能正常执行 `cd mnt` 命令
-    if (strcmp(path, "/") != 0) {
+  // 读取inode信息
+    if (read_inode(inode_index, &target) != 0) {
         return -ENOENT;
     }
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
     *attr = (struct stat){
         .st_mode =
-            DIRMODE,         // 记录条目的类型，权限等信息，本实验由于不考虑权限等高级功能，你只需要返回
+            target.mode,         // 记录条目的类型，权限等信息，本实验由于不考虑权限等高级功能，你只需要返回
                              // DIRMODE 当条目是一个目录时；返回 REGMODE
                              // 当条目是一个文件时
         .st_nlink = 1,       // 固定返回 1 即可，因为我们不考虑链接
         .st_uid = getuid(),  // 固定返回当前用户的 uid
         .st_gid = getgid(),  // 固定返回当前用户的 gid
-        .st_size = 0,        // 返回文件大小（字节记）
-        .st_atim = ts,       // 最后访问时间
-        .st_mtim = ts,       // 最后修改时间（内容）
-        .st_ctim = ts,       // 最后修改时间（元数据）
-        .st_blksize = 4096,  // 文件的最小分配单位大小（字节记）
-        .st_blocks = 0,      // 实际占据的数据块数（以 512
+        .st_size = target.size,        // 返回文件大小（字节记）
+        .st_atim = target.atime,       // 最后访问时间
+        .st_mtim = target.mtime,       // 最后修改时间（内容）
+        .st_ctim = target.ctime,       // 最后修改时间（元数据）
+        .st_blksize = BLOCK_SIZE,  // 文件的最小分配单位大小（字节记）
+        .st_blocks = (target.size + 511) / 512,      // 实际占据的数据块数（以 512
                              // 字节为一块，这是历史原因的规定，和 st_blksize
                              // 中的不一样），这个块数需要考虑文件系统实现的实际情况，
                              // 比如间接指针分配的那个数据块也应该算在这里。
@@ -120,11 +213,51 @@ int fs_getattr(const char* path, struct stat* attr) {
 //
 // `ls` 命令会触发这个函数
 int fs_readdir(const char* path, void* buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi) {
-    fs_info("fs_readdir is called:%s\n", path);
+    fs_info("fs_readdir is called: %s\n", path);
 
-    // 示例实现
+    uint32_t inode_num;
+    if (find_inode_by_path(path, &inode_num) != 0) {
+        return -ENOENT;
+    }
+
+    inode_t dir_inode;
+    if (read_inode(inode_num, &dir_inode) != 0) {
+        return -ENOENT; 
+    }
+
+    if (!S_ISDIR(dir_inode.mode)) {
+        return -ENOENT;
+    }
+
     filler(buffer, ".", NULL, 0);
     filler(buffer, "..", NULL, 0);
+
+    dir_entry_t entries[ENTRIES_PER_BLOCK];
+
+    uint32_t num_blocks_to_check = ceil_div(dir_inode.size, BLOCK_SIZE);
+
+    for (uint32_t i = 0; i < num_blocks_to_check; i++) {
+        uint32_t block_addr = get_directory_block_addr(&dir_inode, i);
+
+        if (block_addr == 0 || disk_read(block_addr, entries) != 0) {
+         continue;
+        }
+
+        // 遍历块内的所有目录项
+        for (int j = 0; j < ENTRIES_PER_BLOCK; j++) {
+            if (entries[j].inode_num != 0) {
+                if (filler(buffer, entries[j].name, NULL, 0) != 0) {
+                    // 如果 FUSE 的缓冲区满了, 提前结束并返回成功
+                    fs_warning("filler buffer is full, returning early.\n");
+                    return 0;
+                }
+            }
+        }
+    }
+
+
+    update_timestamp(&dir_inode, true, false, false);
+    write_inode(inode_num, &dir_inode);
 
     return 0;
 }
@@ -340,6 +473,187 @@ int fs_releasedir(const char* path, struct fuse_file_info* fi) {
     fs_info("fs_releasedir is called:%s\n", path);
 
     return 0;
+}
+
+// ---- 辅助函数实现 ----
+
+int read_inode(int inode_num, inode_t *inode) {
+    if (inode_num >= INODE_COUNT) {
+        return -1; // 索引越界
+    }
+    int block_num = INODE_TABLE_START_BLOCK + (inode_num / INODES_PER_BLOCK);
+    int offset_in_block = inode_num % INODES_PER_BLOCK;
+    char block[BLOCK_SIZE];
+    if(disk_read(block_num, block) != 0){
+        return -1;
+    }
+    memcpy(inode, block + offset_in_block * INODE_SIZE, INODE_SIZE);
+    return 0;
+}
+
+int write_inode(int inode_num, const inode_t *inode) {
+    if (inode_num >= INODE_COUNT) {
+        return -1;
+    }
+    int block_num = INODE_TABLE_START_BLOCK + (inode_num / INODES_PER_BLOCK);
+    int offset_in_block = inode_num % INODES_PER_BLOCK;
+    char block[BLOCK_SIZE];
+    if(disk_read(block_num, block) != 0){
+        return -1;
+    }
+    memcpy(block + offset_in_block * INODE_SIZE, inode, INODE_SIZE);
+    if(disk_write(block_num, block) != 0){
+        return -1;
+    }
+    return 0;
+}
+
+uint32_t get_directory_block_addr(struct inode *dir_inode, uint32_t block_index) {
+    if (block_index < DIRECT_POINTERS) {
+        return dir_inode->direct_block_pointer[block_index];
+    }
+
+    block_index -= DIRECT_POINTERS;
+    uint32_t pointers_per_block = BLOCK_SIZE / sizeof(uint32_t);
+
+    uint32_t indirect_group = block_index / pointers_per_block;
+    uint32_t indirect_offset = block_index % pointers_per_block;
+
+    if (indirect_group < 2) {
+        uint32_t indirect_block_addr = dir_inode->indirect_block_pointer[indirect_group];
+        if (indirect_block_addr == 0) return 0;
+
+        uint32_t pointers[pointers_per_block];
+        if (disk_read(indirect_block_addr, pointers) != 0) return 0;
+        return pointers[indirect_offset];
+    }
+    
+    return 0; // 超出范围
+}
+int find_entry_in_directory(struct inode *dir_inode, const char *name, uint32_t *inode_index) {
+    if (!S_ISDIR(dir_inode->mode)) {
+        return -1;
+    }
+
+    dir_entry_t dir_block[ENTRIES_PER_BLOCK];
+    uint32_t num_blocks_to_check = ceil_div(dir_inode->size, BLOCK_SIZE);
+
+    for (uint32_t i = 0; i < num_blocks_to_check; i++) {
+        uint32_t block_addr = get_directory_block_addr(dir_inode, i);
+        if (block_addr == 0 || disk_read(block_addr, dir_block) != 0) {
+            continue; // 跳过稀疏块或读取失败的块
+        }
+
+        for (int j = 0; j < ENTRIES_PER_BLOCK; j++) {
+            if (dir_block[j].inode_num != 0 && strcmp(dir_block[j].name, name) == 0) {
+                *inode_index = dir_block[j].inode_num;
+                return 0; // 成功找到，立即返回
+            }
+        }
+    }
+
+    return -1; // 遍历完成仍未找到
+}
+// 根据路径获取 inode 编号
+int find_inode_by_path(const char *path, uint32_t *inode_index) {
+    if (path == NULL || path[0] != '/') {
+        return -1;
+    }
+    
+    if (strcmp(path, "/") == 0) {
+        *inode_index = 0;
+        return 0;
+    }
+    char *path_copy = strdup(path);
+    if (!path_copy) return -1;
+
+    uint32_t current_ino = 0;
+    int status = -1; // 默认状态为失败
+    bool found = true; // 假设路径查找会成功
+
+    char *saveptr;
+    char *token = strtok_r(path_copy + 1, "/", &saveptr); 
+
+    while (token != NULL) {
+        struct inode current_inode;
+        if (read_inode(current_ino, &current_inode) != 0 ||
+            find_entry_in_directory(&current_inode, token, &current_ino) != 0) {
+            found = false; // 查找失败
+            break; // 退出循环
+        }
+        token = strtok_r(NULL, "/", &saveptr);
+    }
+
+    if (found) {
+        *inode_index = current_ino;
+        status = 0; // 只有在完全成功时才设置状态为0
+    }
+
+    free(path_copy); // 统一释放资源
+    return status;
+}
+
+int alloc_inode() {//1
+    char bitmap[BLOCK_SIZE];
+    disk_read(INODE_BITMAP_BLOCK, bitmap);
+    for (int i = 0; i < sb.num_inodes; ++i) {
+        if (!((bitmap[i / 8] >> (i % 8)) & 1)) {
+            bitmap[i / 8] |= (1 << (i % 8));
+            disk_write(INODE_BITMAP_BLOCK, bitmap);
+            return i;
+        }
+    }
+    return -ENOSPC;
+}
+
+void free_inode(int inode_num) {
+    char bitmap[BLOCK_SIZE];
+    disk_read(INODE_BITMAP_BLOCK, bitmap);
+    bitmap[inode_num/8] &= ~(1 << (inode_num % 8));
+    disk_write(INODE_BITMAP_BLOCK, bitmap);
+}
+
+// // 在父目录中添加一个条目
+// int add_dir_entry(inode_t *parent_inode, int parent_inode_num, const char *filename, int new_inode_num) {
+//     dir_entry_t new_entry;
+//     strncpy(new_entry.name, filename, MAX_FILENAME_LEN);
+//     new_entry.name[MAX_FILENAME_LEN] = '\0';
+//     new_entry.inode_num = new_inode_num;
+
+//     // 遍历父目录的数据块寻找空位
+//     // ... 此处需要一个完整的实现
+//     // 如果没有空位，需要通过 get_block_num 分配新块
+    
+//     // 简化版：假设总是在末尾添加
+//     int block_idx = parent_inode->size / BLOCK_SIZE;
+//     int offset = parent_inode->size % BLOCK_SIZE;
+    
+//     if (offset == 0) { // 需要新块
+//         int new_block = get_block_num(parent_inode, block_idx, true);
+//         if (new_block < 0) return -ENOSPC;
+//         write_inode(parent_inode_num, parent_inode); // get_block_num 可能修改了 inode
+//     }
+
+//     // 更新大小并写入
+//     parent_inode->size += sizeof(dir_entry_t);
+//     // ... (将 new_entry 写入到正确的块和偏移)
+
+//     return 0;
+// }
+
+// 释放一个 inode 所有的 data blocks
+void free_all_data_blocks(inode_t *inode) {
+    // ... 必须遍历所有直接、一级间接指针，并调用 free_data_block
+}
+
+// 更新时间戳
+void update_timestamp(inode_t *inode, bool access, bool modify, bool change) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts); 
+
+    if (access) inode->atime = (uint32_t)ts.tv_sec; 
+    if (modify) inode->mtime = (uint32_t)ts.tv_sec; 
+    if (change) inode->ctime = (uint32_t)ts.tv_sec; 
 }
 
 static struct fuse_operations fs_operations = {.getattr = fs_getattr,
